@@ -5,10 +5,12 @@ import struct Logging.Logger
 class TestSession: LokiSession {
     var logs: [LokiLog]?
     var labels: LokiLabels?
+    var headers: [String: String]?
 
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, completion: @escaping (Result<StatusCode, Error>) -> ()) {
+    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
         self.logs = logs
         self.labels = labels
+        self.headers = headers
     }
 }
 

@@ -5,19 +5,19 @@ import FoundationNetworking
 import Logging
 
 protocol LokiSession {
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, completion: @escaping (Result<StatusCode, Error>) -> ())
+    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ())
 
-    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, completion: @escaping (Result<StatusCode, Error>) -> ())
+    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ())
 }
 
 extension LokiSession {
-    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, completion: @escaping (Result<StatusCode, Error>) -> ()) {
-        send([log], with: labels, url: url, completion: completion)
+    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
+        send([log], with: labels, url: url, headers: headers, completion: completion)
     }
 }
 
 extension URLSession: LokiSession {
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, completion: @escaping (Result<StatusCode, Error>) -> ()) {
+    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
         do {
             let data = try JSONEncoder().encode(LokiRequest(streams: [.init(logs, with: labels)]))
 
@@ -25,6 +25,9 @@ extension URLSession: LokiSession {
             request.httpMethod = "POST"
             request.httpBody = data
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            headers.forEach {
+                request.setValue($0.value, forHTTPHeaderField: $0.key)
+            }
 
             let task = dataTask(with: request) { data, response, error in
                 if let error = error {

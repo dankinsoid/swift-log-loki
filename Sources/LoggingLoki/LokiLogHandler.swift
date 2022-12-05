@@ -10,6 +10,7 @@ public struct LokiLogHandler: LogHandler {
     internal let session: LokiSession
 
     private var lokiURL: URL
+    private let headers: [String: String]
 
     /// The service label for the log handler instance.
     ///
@@ -28,6 +29,7 @@ public struct LokiLogHandler: LogHandler {
         }
         #endif
         self.session = session
+        self.headers = [:]
     }
 
     /// Initializes a ``LokiLogHandler`` with the provided parameters.
@@ -47,7 +49,8 @@ public struct LokiLogHandler: LogHandler {
     /// - Parameters:
     ///   - label: client supplied string describing the logger. Should be unique but not enforced
     ///   - lokiURL: client supplied Grafana Loki base URL
-    public init(label: String, lokiURL: URL) {
+    ///   - headers: additional headers for logger requests
+    public init(label: String, lokiURL: URL, headers: [String: String] = [:]) {
         self.label = label
         #if os(Linux)
         self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
@@ -58,6 +61,7 @@ public struct LokiLogHandler: LogHandler {
             self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
         }
         #endif
+        self.headers = headers
         self.session = URLSession(configuration: .ephemeral)
     }
 
@@ -81,7 +85,7 @@ public struct LokiLogHandler: LogHandler {
         let timestamp = Date()
         let message = "[\(level.rawValue.uppercased())]\(prettyMetadata.map { " \($0)"} ?? "") \(message)"
 
-        session.send((timestamp, message), with: labels, url: lokiURL) { result in
+        session.send((timestamp, message), with: labels, url: lokiURL, headers: headers) { result in
             if case .failure(let failure) = result {
                 debugPrint(failure)
             }
@@ -128,4 +132,31 @@ public struct LokiLogHandler: LogHandler {
         !metadata.isEmpty ? metadata.map { "\($0)=\($1)" }.joined(separator: " ") : nil
     }
 
+}
+
+public extension LokiLogHandler {
+    
+    
+    /// Initializes a ``LokiLogHandler`` with the provided parameters.
+    ///
+    /// The handler will send all logs it captures to the Grafana Loki instance the client has provided. If a request fails it will send a debugPrint to the the console.
+    /// The handler will not send the request again. It's basically fire and forget.
+    ///
+    /// ```swift
+    /// LoggingSystem.bootstrap {
+    ///     LokiLogHandler(
+    ///         label: $0,
+    ///         lokiURL: URL(string: "http://localhost:3100")!
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - label: client supplied string describing the logger. Should be unique but not enforced
+    ///   - lokiURL: client supplied Grafana Loki base URL
+    ///   - user: client supplied Grafana Loki user name
+    ///   - password: client supplied Grafana Loki user password
+    init(label: String, lokiURL: URL, user: String, password: String) {
+        self.init(label: label, lokiURL: lokiURL, headers: ["Authorization": "Basic \(password)"])
+    }
 }
