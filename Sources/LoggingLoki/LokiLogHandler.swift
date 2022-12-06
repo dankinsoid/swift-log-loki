@@ -87,7 +87,7 @@ public struct LokiLogHandler: LogHandler {
 
         session.send((timestamp, message), with: labels, url: lokiURL, headers: headers) { result in
             if case .failure(let failure) = result {
-                debugPrint(failure)
+                debugPrint(failure.localizedDescription)
             }
         }
     }
