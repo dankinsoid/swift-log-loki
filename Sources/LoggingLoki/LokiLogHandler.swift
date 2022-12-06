@@ -17,7 +17,7 @@ public struct LokiLogHandler: LogHandler {
     /// This value will be sent to Grafana Loki as the `service` label.
     public var label: String
 
-    internal init(label: String, lokiURL: URL, session: LokiSession) {
+    internal init(label: String, lokiURL: URL, headers: [String: String] = [:], session: LokiSession) {
         self.label = label
         #if os(Linux)
         self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
@@ -29,7 +29,7 @@ public struct LokiLogHandler: LogHandler {
         }
         #endif
         self.session = session
-        self.headers = [:]
+        self.headers = headers
     }
 
     /// Initializes a ``LokiLogHandler`` with the provided parameters.
@@ -51,18 +51,12 @@ public struct LokiLogHandler: LogHandler {
     ///   - lokiURL: client supplied Grafana Loki base URL
     ///   - headers: additional headers for logger requests
     public init(label: String, lokiURL: URL, headers: [String: String] = [:]) {
-        self.label = label
-        #if os(Linux)
-        self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
-        #else
-        if #available(macOS 13.0, *) {
-            self.lokiURL = lokiURL.appending(path: "/loki/api/v1/push")
-        } else {
-            self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
-        }
-        #endif
-        self.headers = headers
-        self.session = URLSession(configuration: .ephemeral)
+        self.init(
+            label: label,
+            lokiURL: lokiURL,
+            headers: headers,
+            session: URLSession(configuration: .ephemeral)
+        )
     }
 
     /// This method is called when a `LogHandler` must emit a log message. There is no need for the `LogHandler` to
@@ -78,12 +72,20 @@ public struct LokiLogHandler: LogHandler {
     ///     - function: The function the log line was emitted from.
     ///     - line: The line the log message was emitted from.
     public func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source: String, file: String, function: String, line: UInt) {
-        let prettyMetadata = metadata?.isEmpty ?? true ? prettyMetadata : prettify(self.metadata.merging(metadata!, uniquingKeysWith: { _, new in new }))
+        let metadata = self.metadata.merging(metadata ?? [:], uniquingKeysWith: { _, new in new })
 
-
-        let labels: [String: String] = ["service": label, "source": source, "file": file, "function": function, "line": String(line)]
+        let labels: [String: String] = [
+            "level": level.rawValue,
+            "service": label,
+            "source": source,
+            "file": file,
+            "function": function,
+            "line": String(line)
+        ].merging(metadata.mapValues(\.description)) { _, metadata in
+            metadata
+        }
         let timestamp = Date()
-        let message = "[\(level.rawValue.uppercased())]\(prettyMetadata.map { " \($0)"} ?? "") \(message)"
+        let message = "[\(level.rawValue.uppercased())] \(message)"
 
         session.send((timestamp, message), with: labels, url: lokiURL, headers: headers) { result in
             if case .failure(let failure) = result {
@@ -158,6 +160,10 @@ public extension LokiLogHandler {
     ///   - password: client supplied Grafana Loki user password
     init(label: String, lokiURL: URL, user: String, password: String) {
         let string = "\(user):\(password)".data(using: .utf8)?.base64EncodedString() ?? "\(user):\(password)"
-        self.init(label: label, lokiURL: lokiURL, headers: ["Authorization": "Basic \(string)"])
+        self.init(
+            label: label,
+            lokiURL: lokiURL,
+            headers: ["Authorization": "Basic \(string)"]
+        )
     }
 }
