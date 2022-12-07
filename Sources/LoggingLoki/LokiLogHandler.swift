@@ -89,7 +89,7 @@ public struct LokiLogHandler: LogHandler {
             metadata
         }
         let timestamp = Date()
-        let message = "[\(level.rawValue.uppercased())] \(metadata.isEmpty ? "" : prettify(metadata) + " ")\(message)"
+        let message = "[\(level.rawValue.uppercased())] \(message)\(metadata.isEmpty ? "" : " " + prettify(metadata))"
 
         session.send((timestamp, message), with: labels, url: lokiURL, headers: headers) { result in
             if case .failure(let failure) = result {
@@ -129,7 +129,7 @@ public struct LokiLogHandler: LogHandler {
     public var logLevel: Logger.Level = .info
 
     private func prettify(_ metadata: Logger.Metadata) -> String {
-        metadata.map { "\($0)=\($1)" }.joined(separator: " ")
+        "[\(metadata.map { "\($0): \($1)" }.joined(separator: ", "))]"
     }
 
 }
