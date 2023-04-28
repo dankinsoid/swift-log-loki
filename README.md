@@ -19,7 +19,7 @@ This library can be used as an implementation of Apple's [swift-log](https://git
 Add `LoggingLoki` to the dependencies within your application's `Package.swift` file.
 
 ```swift
-.package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "1.7.0"),
+.package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "1.8.0"),
 ```
 
 Add `LoggingLoki` to your target's dependencies.
