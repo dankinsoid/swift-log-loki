@@ -133,7 +133,7 @@ public struct LokiLogHandler: LogHandler {
 			  }
         let metadataString = metadata.isEmpty
             ? prettyMetadata
-            : prettify(self.metadata.merging(metadata) { _, sec in sec })
+            : prettify(metadata)
 
         let timestamp = Date()
         let message = "[\(level.rawValue.uppercased())]\(metadataString.isEmpty ? "" : " \(metadataString)") \(message)"
@@ -182,7 +182,7 @@ public struct LokiLogHandler: LogHandler {
     public var logLevel: Logger.Level = .info
 
     private func prettify(_ metadata: Logger.Metadata) -> String {
-				let metadata = metadata.filter { includeLabels.contains($0.key) }
+				let metadata = metadata.filter { !includeLabels.contains($0.key) }
         return metadata.isEmpty ? "" : "[\(metadata.map { "\($0): \($1)" }.sorted().joined(separator: ", "))]"
     }
 }
