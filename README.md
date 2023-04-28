@@ -9,6 +9,8 @@ This library can be used as an implementation of Apple's [swift-log](https://git
 
 - Supports Darwin (macOS), Linux platforms, iOS, watchOS and tvOS
 - Different logging levels such as `trace`, `debug`, `info`, `notice`, `warning`, `error` and `critical`
+- Option to send logs as snappy-compressed Protobuf (default) or JSON
+- Batching logs via `TimeInterval`, amount of log entries or a mix of those options
 
 ## Add dependency
 
@@ -17,7 +19,7 @@ This library can be used as an implementation of Apple's [swift-log](https://git
 Add `LoggingLoki` to the dependencies within your application's `Package.swift` file.
 
 ```swift
-.package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "0.5.0"),
+.package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "1.1.0.0"),
 ```
 
 Add `LoggingLoki` to your target's dependencies.

@@ -9,17 +9,30 @@ public struct LokiLogHandler: LogHandler {
 
     internal let session: LokiSession
 
-    private var lokiURL: URL
-    private let headers: [String: String]
+    private let lokiURL: URL
+    private let sendDataAsJSON: Bool
+
+    private let batchSize: Int
+    private let maxBatchTimeInterval: TimeInterval?
+
+    private let batcher: Batcher
 
     /// The service label for the log handler instance.
     ///
     /// This value will be sent to Grafana Loki as the `service` label.
     public var label: String
 
-    internal init(label: String, lokiURL: URL, headers: [String: String] = [:], session: LokiSession) {
+    /// This initializer is only used internally and for running Unit Tests.
+    internal init(label: String,
+                  lokiURL: URL,
+                  auth: LokiAuth = .none,
+                  headers: [String: String] = [:],
+                  sendAsJSON: Bool = false,
+                  batchSize: Int = 10,
+                  maxBatchTimeInterval: TimeInterval? = 5 * 60,
+                  session: LokiSession) {
         self.label = label
-        #if os(Linux)
+        #if os(Linux) // this needs to be explicitly checked, otherwise the build will fail on linux
         self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
         #else
         if #available(macOS 13.0, *) {
@@ -28,8 +41,17 @@ public struct LokiLogHandler: LogHandler {
             self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
         }
         #endif
+        self.sendDataAsJSON = sendAsJSON
+        self.batchSize = batchSize
+        self.maxBatchTimeInterval = maxBatchTimeInterval
         self.session = session
-        self.headers = headers
+        self.batcher = Batcher(session: self.session,
+                               auth: auth,
+                               headers: headers,
+                               lokiURL: self.lokiURL,
+                               sendDataAsJSON: self.sendDataAsJSON,
+                               batchSize: self.batchSize,
+                               maxBatchTimeInterval: self.maxBatchTimeInterval)
     }
 
     /// Initializes a ``LokiLogHandler`` with the provided parameters.
@@ -49,14 +71,31 @@ public struct LokiLogHandler: LogHandler {
     /// - Parameters:
     ///   - label: client supplied string describing the logger. Should be unique but not enforced
     ///   - lokiURL: client supplied Grafana Loki base URL
-    ///   - headers: additional headers for logger requests
-    public init(label: String, lokiURL: URL, headers: [String: String] = [:]) {
-        self.init(
-            label: label,
-            lokiURL: lokiURL,
-            headers: headers,
-            session: URLSession(configuration: .ephemeral)
-        )
+    ///   - headers: These headers will be added to all requests sent to Grafana Loki.
+    ///   - sendAsJSON: Indicates if the logs should be sent to Loki as JSON.
+    ///                 This should not be required in most cases. By default this is false.
+    ///                 Logs will instead be sent as snappy compressed protobuf,
+    ///                 which is much smaller and should therefor use less bandwidth.
+    ///                 This is also the recommended way by Loki.
+    ///   - batchSize: The size of a single batch of data. Once this limit is exceeded the batch of logs will be sent to Loki.
+    ///                This is 10 log entries by default.
+    ///   - maxBatchTimeInterval: The maximum amount of time in seconds to elapse until a batch is sent to Loki.
+    ///                           This limit is set to 5 minutes by default. If a batch is not "full" after the end of the interval, it will be sent to Loki.
+    ///                           The option should prevent leaving logs in memory for too long without sending them.
+    public init(label: String,
+                lokiURL: URL,
+                auth: LokiAuth = .none,
+                headers: [String: String] = [:],
+                sendAsJSON: Bool = false,
+                batchSize: Int = 10,
+                maxBatchTimeInterval: TimeInterval? = 5 * 60) {
+        self.init(label: label,
+                  lokiURL: lokiURL,
+                  auth: auth,
+                  headers: headers,
+                  sendAsJSON: sendAsJSON,
+                  batchSize: batchSize,
+                  session: URLSession(configuration: .ephemeral))
     }
 
     /// This method is called when a `LogHandler` must emit a log message. There is no need for the `LogHandler` to
@@ -72,25 +111,31 @@ public struct LokiLogHandler: LogHandler {
     ///     - function: The function the log line was emitted from.
     ///     - line: The line the log message was emitted from.
     public func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source: String, file: String, function: String, line: UInt) {
-        let metadata = self.metadata.merging(metadata ?? [:], uniquingKeysWith: { _, new in new })
+        var labels = self.metadata.lokiLabels.merging(metadata?.lokiLabels ?? [:]) { _, sec in sec }
+        var metadata = metadata ?? [:]
+        metadata.lokiLabels = [:]
+        let metadataString = metadata.isEmpty
+            ? prettyMetadata
+            : prettify(self.metadata.merging(metadata) { _, sec in sec })
 
-        let labels: [String: String] = [
-            "level": level.rawValue,
-            "service": label,
-            "source": source,
-            "file": file,
-            "function": function,
-            "line": String(line)
-        ].merging(metadata.mapValues(\.description)) { _, metadata in
+        labels.merge(
+            [
+                "level": level.rawValue,
+                "service": label,
+                "source": source,
+                "file": file,
+                "function": function,
+                "line": String(line)
+            ]
+        ) { metadata, _ in
             metadata
         }
         let timestamp = Date()
-        let message = "[\(level.rawValue.uppercased())] \(message)"
-
-        session.send((timestamp, message), with: labels, url: lokiURL, headers: headers) { result in
-            if case .failure(let failure) = result {
-                debugPrint(failure)
-            }
+        let message = "[\(level.rawValue.uppercased())]\(metadataString.isEmpty ? "" : " \(metadataString)") \(message)"
+        let log = (timestamp, message)
+        Task { [self, labels] in
+            await batcher.addEntryToBatch(log, with: labels)
+            await batcher.sendBatchIfNeeded()
         }
     }
 
@@ -110,8 +155,8 @@ public struct LokiLogHandler: LogHandler {
         }
     }
 
-    private var prettyMetadata: String?
-
+    private var prettyMetadata = ""
+    
     /// Get or set the entire metadata storage as a dictionary.
     ///
     /// - note: `LogHandler`s must treat logging metadata as a value type. This means that the change in metadata must
@@ -121,7 +166,7 @@ public struct LokiLogHandler: LogHandler {
             prettyMetadata = prettify(metadata)
         }
     }
-
+    
     /// Get or set the configured log level.
     ///
     /// - note: `LogHandler`s must treat the log level as a value type. This means that the change in metadata must
@@ -130,10 +175,11 @@ public struct LokiLogHandler: LogHandler {
     ///        `LogHandler`.
     public var logLevel: Logger.Level = .info
 
-    private func prettify(_ metadata: Logger.Metadata) -> String? {
-        !metadata.isEmpty ? metadata.map { "\($0)=\($1)" }.joined(separator: " ") : nil
+    private func prettify(_ metadata: Logger.Metadata) -> String {
+        var metadata = metadata
+        metadata.lokiLabels = [:]
+        return metadata.isEmpty ? "" : "[\(metadata.map { "\($0): \($1)" }.sorted().joined(separator: ", "))]"
     }
-
 }
 
 public extension LokiLogHandler {
@@ -159,11 +205,10 @@ public extension LokiLogHandler {
     ///   - user: client supplied Grafana Loki user name
     ///   - password: client supplied Grafana Loki user password
     init(label: String, lokiURL: URL, user: String, password: String) {
-        let string = "\(user):\(password)".data(using: .utf8)?.base64EncodedString() ?? "\(user):\(password)"
         self.init(
             label: label,
             lokiURL: lokiURL,
-            headers: ["Authorization": "Basic \(string)"]
+            auth: .basic(user: user, password: password)
         )
     }
 }

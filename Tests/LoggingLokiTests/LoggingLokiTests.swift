@@ -7,25 +7,50 @@ class TestSession: LokiSession {
     var labels: LokiLabels?
     var headers: [String: String]?
 
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
-        self.logs = logs
-        self.labels = labels
-        self.headers = headers
+    func send(_ batch: Batch,
+              url: URL,
+              headers: [String: String],
+              auth: LokiAuth,
+              sendAsJSON: Bool = false,
+              completion: @escaping (Result<StatusCode, Error>) -> Void) {
+        self.logs = batch.entries.first?.logEntries
+        self.labels = batch.entries.first?.labels
     }
 }
 
 final class LoggingLokiTests: XCTestCase {
+    let expectedLogMessage = "Testing swift-log-loki"
+    let expectedSource = "swift-log"
+    let expectedFile = "TestFile.swift"
+    let expectedFunction = "testFunction(_:)"
+    let expectedLine: UInt = 42
+    let expectedService = "test.swift-log"
+
     func testLog() throws {
-        let expectedLogMessage = "Testing swift-log-loki"
-        let expectedSource = "swift-log"
-        let expectedFile = "TestFile.swift"
-        let expectedFunction = "testFunction(_:)"
-        let expectedLine: UInt = 42
-        let expectedService = "test.swift-log"
-
-        let handler = LokiLogHandler(label: expectedService, lokiURL: URL(string: "http://localhost:3100")!, session: TestSession())
+        let handler = LokiLogHandler(label: expectedService, lokiURL: URL(string: "http://localhost:3100")!, batchSize: 1, session: TestSession())
         handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        checkIfLogExists(for: handler)
+    }
 
+    func testLogWithBiggerBatchSize() throws {
+        let handler = LokiLogHandler(label: expectedService, lokiURL: URL(string: "http://localhost:3100")!, batchSize: 3, session: TestSession())
+        handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        try XCTAssertNil(XCTUnwrap(handler.session as? TestSession).logs?.first)
+        handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        checkIfLogExists(for: handler)
+    }
+
+    func testLogWithMaxInterval() async throws {
+        let handler = LokiLogHandler(label: expectedService, lokiURL: URL(string: "http://localhost:3100")!, maxBatchTimeInterval: 10, session: TestSession())
+        handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        try XCTAssertNil(XCTUnwrap(handler.session as? TestSession).logs?.first)
+        try await Task.sleep(nanoseconds: 15_000_000_000)
+        handler.log(level: .error, message: "\(expectedLogMessage)", metadata: ["log": "swift"], source: expectedSource, file: expectedFile, function: expectedFunction, line: expectedLine)
+        checkIfLogExists(for: handler)
+    }
+
+    func checkIfLogExists(for handler: LokiLogHandler) {
         guard let session = handler.session as? TestSession else {
             XCTFail("Could not cast the Handler's Session to TestSession")
             return

@@ -3,31 +3,62 @@ import Foundation
 import FoundationNetworking
 #endif
 import Logging
+import Snappy
 
 protocol LokiSession {
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ())
-
-    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ())
-}
-
-extension LokiSession {
-    func send(_ log: LokiLog, with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
-        send([log], with: labels, url: url, headers: headers, completion: completion)
-    }
+    
+    func send(_ batch: Batch,
+              url: URL,
+              headers: [String: String],
+              auth: LokiAuth,
+              sendAsJSON: Bool,
+              completion: @escaping (Result<StatusCode, Error>) -> Void)
 }
 
 extension URLSession: LokiSession {
-    func send(_ logs: [LokiLog], with labels: LokiLabels, url: URL, headers: [String: String], completion: @escaping (Result<StatusCode, Error>) -> ()) {
+    
+    func send(_ batch: Batch,
+              url: URL,
+              headers: [String: String],
+              auth: LokiAuth,
+              sendAsJSON: Bool = false,
+              completion: @escaping (Result<StatusCode, Error>) -> Void) {
         do {
-            let data = try JSONEncoder().encode(LokiRequest(streams: [.init(logs, with: labels)]))
+            let data: Data
+            let contentType: String
+            
+            if sendAsJSON {
+                data = try JSONEncoder().encode(LokiRequest.fromBatch(batch))
+                contentType = "application/json"
+            } else {
+                let proto = Logproto_PushRequest.with { request in
+                    request.streams = batch.entries.map { batchEntry in
+                        Logproto_StreamAdapter.with { stream in
+                            stream.labels = "{" + batchEntry.labels.map { "\($0)=\"\($1)\"" }.joined(separator: ",") + "}"
+                            stream.entries = batchEntry.logEntries.map { timestamp, message in
+                                Logproto_EntryAdapter.with { entry in
+                                    entry.timestamp = .with {
+                                        $0.seconds = Int64(timestamp.timeIntervalSince1970.rounded(.down))
+                                        $0.nanos = Int32(Int(timestamp.timeIntervalSince1970 * 1_000_000_000) % 1_000_000_000)
+                                    }
+                                    entry.line = message
+                                }
+                            }
+                        }
+                    }
+                }
+                data = try proto.serializedData().compressedUsingSnappy()
+                contentType = "application/x-protobuf"
+            }
 
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.httpBody = data
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            headers.forEach {
-                request.setValue($0.value, forHTTPHeaderField: $0.key)
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            for header in headers {
+                request.setValue(header.value, forHTTPHeaderField: header.key)
             }
+            try auth.setAuth(for: &request)
 
             let task = dataTask(with: request) { data, response, error in
                 if let error = error {
@@ -35,7 +66,7 @@ extension URLSession: LokiSession {
                 } else if let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) {
                     completion(.success(httpResponse.statusCode))
                 } else {
-                    completion(.failure(LokiError.invalidResponse(data ?? Data())))
+                    completion(.failure(LokiError.invalidResponse(data)))
                 }
             }
             task.resume()
