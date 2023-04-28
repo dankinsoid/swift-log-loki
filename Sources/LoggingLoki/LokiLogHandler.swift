@@ -136,7 +136,7 @@ public struct LokiLogHandler: LogHandler {
             : prettify(metadata)
 
         let timestamp = Date()
-        let message = "[\(level.rawValue.uppercased())]\(metadataString.isEmpty ? "" : " \(metadataString)") \(message)"
+		  	let message = "\("[\(level.rawValue.uppercased())]".consoleStyle(level.style))\(metadataString.isEmpty ? "" : " \(metadataString)") \(message)"
         let log = (timestamp, message)
 			  let labels = metadata.filter { includeLabels.contains($0.key) }.mapValues(\.description)
         Task { [self, labels] in
