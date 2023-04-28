@@ -197,8 +197,8 @@ public extension LokiLogHandler {
 	
 	  enum Labels: String {
 		
-		    case logLevel = "log-level"
-			  case loggerLabel = "logger-label"
+		    case logLevel = "logLevel"
+			  case loggerLabel = "loggerLabel"
 			  case file
 			  case line
 			  case function

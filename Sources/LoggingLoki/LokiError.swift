@@ -1,7 +1,7 @@
 import struct Foundation.Data
 import protocol Foundation.LocalizedError
 
-enum LokiError: LocalizedError {
+enum LokiError: LocalizedError, CustomStringConvertible {
     
     case invalidResponse(Data?)
 
@@ -12,4 +12,8 @@ enum LokiError: LocalizedError {
             return String(data: data, encoding: .utf8)
         }
     }
+	
+	var description: String {
+		errorDescription ?? "LokiError"
+	}
 }
