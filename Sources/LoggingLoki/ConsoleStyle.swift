@@ -19,10 +19,10 @@ extension Logger.Level {
 	var style: ConsoleStyle {
 		switch self {
 		case .trace: return ConsoleStyle(prefix: "\u{001B}[36m")
-		case .debug: return ConsoleStyle(prefix: "\u{001B}[34m")
+		case .debug: return ConsoleStyle(prefix: "\u{001B}[94m")
 		case .info, .notice: return ConsoleStyle(prefix: "\u{001B}[32m")
 		case .warning: return ConsoleStyle(prefix: "\u{001B}[33m")
-		case .error: return ConsoleStyle(prefix: "\u{001B}[31m")
+		case .error: return ConsoleStyle(prefix: "\u{001B}[91m")
 		case .critical: return ConsoleStyle(prefix: "\u{001B}[95m")
 		}
 	}
