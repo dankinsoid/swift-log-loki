@@ -14,7 +14,7 @@ public struct LokiLogHandler: LogHandler {
 
     private let batchSize: Int
     private let maxBatchTimeInterval: TimeInterval?
-	  private let includeLabels: Set<String>
+	  private let includeLabels: LabelsSet
 
     private let batcher: Batcher
 
@@ -32,7 +32,7 @@ public struct LokiLogHandler: LogHandler {
                   batchSize: Int = 10,
                   maxBatchTimeInterval: TimeInterval? = 5 * 60,
                   session: LokiSession,
-									includeLabels: Set<String> = Self.defaultIndexedLabels) {
+									includeLabels: LabelsSet = Self.defaultIndexedLabels) {
         self.label = label
         #if os(Linux) // this needs to be explicitly checked, otherwise the build will fail on linux
         self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
@@ -92,7 +92,7 @@ public struct LokiLogHandler: LogHandler {
                 sendAsJSON: Bool = false,
                 batchSize: Int = 10,
                 maxBatchTimeInterval: TimeInterval? = 5 * 60,
-								indexedMetadataKeys: Set<String> = Self.defaultIndexedLabels) {
+								indexedMetadataKeys: LabelsSet = Self.defaultIndexedLabels) {
         self.init(label: label,
                   lokiURL: lokiURL,
                   auth: auth,
@@ -121,8 +121,8 @@ public struct LokiLogHandler: LogHandler {
 			  }
 				.merging(
 				    [
-							  Labels.logLevel.rawValue: .string(level.rawValue),
-								Labels.loggerLabel.rawValue: .string(label),
+							  Labels.level.rawValue: .string(level.rawValue),
+								Labels.label.rawValue: .string(label),
 								Labels.source.rawValue: .string(source),
 								Labels.file.rawValue: .string(file),
 								Labels.function.rawValue: .string(function),
@@ -189,19 +189,5 @@ public struct LokiLogHandler: LogHandler {
 
 public extension LokiLogHandler {
 	
-	  static var defaultIndexedLabels: Set<String> = Set(
-			  [
-			    	Labels.logLevel, .loggerLabel, .file, .function, .source
-			  ].map(\.rawValue)
-		)
-	
-	  enum Labels: String {
-		
-		    case logLevel = "logLevel"
-			  case loggerLabel = "loggerLabel"
-			  case file
-			  case line
-			  case function
-			  case source
-	  }
+	  static var defaultIndexedLabels = LabelsSet(Labels.allCases.map(\.rawValue))
 }
