@@ -27,6 +27,7 @@ public struct LokiLogHandler: LogHandler {
     /// This initializer is only used internally and for running Unit Tests.
     internal init(
         label: String,
+        logLevel: Logger.Level = .info,
         lokiURL: URL,
         auth: LokiAuth = .none,
         headers: [String: String] = [:],
@@ -54,6 +55,7 @@ public struct LokiLogHandler: LogHandler {
         self.metadataProvider = metadataProvider
         self.includeLabels = includeLabels
         self.metadataProvider = metadataProvider
+        self.logLevel = logLevel
         self.batcher = Batcher(
             session: self.session,
             auth: auth,
@@ -81,6 +83,7 @@ public struct LokiLogHandler: LogHandler {
     ///
     /// - Parameters:
     ///   - label: client supplied string describing the logger. Should be unique but not enforced
+    ///   - logLevel: The log level for the log handler instance. This is `.info` by default.
     ///   - lokiURL: client supplied Grafana Loki base URL
     ///   - headers: These headers will be added to all requests sent to Grafana Loki.
     ///   - sendAsJSON: Indicates if the logs should be sent to Loki as JSON.
@@ -95,6 +98,7 @@ public struct LokiLogHandler: LogHandler {
     ///                           The option should prevent leaving logs in memory for too long without sending them.
     public init(
         label: String,
+        logLevel: Logger.Level = .info,
         lokiURL: URL,
         auth: LokiAuth = .none,
         headers: [String: String] = [:],
@@ -106,6 +110,7 @@ public struct LokiLogHandler: LogHandler {
     ) {
         self.init(
             label: label,
+            logLevel: logLevel,
             lokiURL: lokiURL,
             auth: auth,
             headers: headers,
@@ -193,7 +198,7 @@ public struct LokiLogHandler: LogHandler {
     ///         only affect this very `LogHandler`. It is acceptable to provide some form of global log level override
     ///         that means a change in log level on a particular `LogHandler` might not be reflected in any
     ///        `LogHandler`.
-    public var logLevel: Logger.Level = .info
+    public var logLevel: Logger.Level
     
     private func prettify(_ metadata: Logger.Metadata) -> String {
         let metadata = metadata.filter { !includeLabels.contains($0.key) }
