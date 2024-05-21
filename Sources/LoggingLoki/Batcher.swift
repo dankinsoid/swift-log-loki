@@ -10,9 +10,10 @@ final actor Batcher {
     private let sendDataAsJSON: Bool
 
     private let batchSize: Int
-    private let maxBatchTimeInterval: TimeInterval?
+    private let maxBatchTimeInterval: TimeInterval
 
     private var currentTimer: Timer? = nil
+    private var timer: Task<Void, Error>?
 
     var batch: Batch? = nil
 
@@ -22,7 +23,8 @@ final actor Batcher {
          lokiURL: URL,
          sendDataAsJSON: Bool,
          batchSize: Int,
-         maxBatchTimeInterval: TimeInterval?) {
+         maxBatchTimeInterval: TimeInterval
+    ) {
         self.session = session
         self.auth = auth
         self.headers = headers
@@ -41,25 +43,20 @@ final actor Batcher {
             batch.addEntry(log, with: labels)
             self.batch = batch
         }
+        if let batch, batch.totalLogEntries >= batchSize {
+            sendBatch()
+        } else if timer == nil {
+            timer = Task { [weak self, maxBatchTimeInterval] in
+                try await Task.sleep(nanoseconds: UInt64(maxBatchTimeInterval * 1_000_000_000))
+                await self?.sendBatch()
+            }
+        }
     }
 
-    func sendBatchIfNeeded() {
+    private func sendBatch() {
         guard let batch else { return }
-
-        if let maxBatchTimeInterval, batch.createdAt.addingTimeInterval(maxBatchTimeInterval) < Date() {
-            sendBatch(batch)
-            self.batch = nil
-            return
-        }
-
-        if batch.totalLogEntries >= batchSize {
-            sendBatch(batch)
-            self.batch = nil
-            return
-        }
-    }
-
-    private func sendBatch(_ batch: Batch) {
+        timer = nil
+        self.batch = nil
         session.send(batch, url: lokiURL, headers: headers, auth: auth, sendAsJSON: sendDataAsJSON) { result in
             if case .failure(let failure) = result {
                 debugPrint(failure)

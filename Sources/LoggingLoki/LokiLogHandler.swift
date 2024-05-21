@@ -6,7 +6,9 @@ import Logging
 
 /// ``LokiLogHandler`` is a logging backend for `Logging`.
 public struct LokiLogHandler: LogHandler {
-    
+
+    private static let cache = NIOLockedValueBox<[String: Batcher]>([:])
+
     internal let session: LokiSession
     
     private let lokiURL: URL
@@ -33,21 +35,23 @@ public struct LokiLogHandler: LogHandler {
         headers: [String: String] = [:],
         sendAsJSON: Bool = false,
         batchSize: Int = 10,
-        maxBatchTimeInterval: TimeInterval? = 5 * 60,
+        maxBatchTimeInterval: TimeInterval = 5 * 60,
         session: LokiSession,
         includeLabels: LabelsSet = Self.defaultIndexedLabels,
         metadataProvider: Logger.MetadataProvider? = nil
     ) {
         self.label = label
+        let url: URL
 #if os(Linux) // this needs to be explicitly checked, otherwise the build will fail on linux
-        self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
+        url = lokiURL.appendingPathComponent("/loki/api/v1/push")
 #else
         if #available(macOS 13.0, iOS 16.0, *) {
-            self.lokiURL = lokiURL.appending(path: "/loki/api/v1/push")
+            url = lokiURL.appending(path: "/loki/api/v1/push")
         } else {
-            self.lokiURL = lokiURL.appendingPathComponent("/loki/api/v1/push")
+            url = lokiURL.appendingPathComponent("/loki/api/v1/push")
         }
 #endif
+        self.lokiURL = url
         self.sendDataAsJSON = sendAsJSON
         self.batchSize = batchSize
         self.maxBatchTimeInterval = maxBatchTimeInterval
@@ -56,15 +60,22 @@ public struct LokiLogHandler: LogHandler {
         self.includeLabels = includeLabels
         self.metadataProvider = metadataProvider
         self.logLevel = logLevel
-        self.batcher = Batcher(
-            session: self.session,
-            auth: auth,
-            headers: headers,
-            lokiURL: self.lokiURL,
-            sendDataAsJSON: self.sendDataAsJSON,
-            batchSize: self.batchSize,
-            maxBatchTimeInterval: self.maxBatchTimeInterval
-        )
+        self.batcher = Self.cache.withLockedValue {
+            if let result = $0[label] {
+                return result
+            }
+            let result = Batcher(
+                session: session,
+                auth: auth,
+                headers: headers,
+                lokiURL: url,
+                sendDataAsJSON: sendAsJSON,
+                batchSize: batchSize,
+                maxBatchTimeInterval: maxBatchTimeInterval
+            )
+            $0[label] = result
+            return result
+        }
     }
     
     /// Initializes a ``LokiLogHandler`` with the provided parameters.
@@ -160,7 +171,6 @@ public struct LokiLogHandler: LogHandler {
         let labels = metadata.filter { includeLabels.contains($0.key) }.mapValues(\.description)
         Task { [self, labels] in
             await batcher.addEntryToBatch(log, with: labels)
-            await batcher.sendBatchIfNeeded()
         }
     }
     
