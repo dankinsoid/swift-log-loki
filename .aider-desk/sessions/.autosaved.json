@@ -1,0 +1,49 @@
+{
+  "contextMessages": [],
+  "contextFiles": [
+    {
+      "path": "Sources/LoggingLoki/Batch.swift",
+      "sourceType": "vscode",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/BatchEntry.swift",
+      "sourceType": "vscode",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiLogHandler.swift",
+      "sourceType": "vscode",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/Batcher.swift",
+      "sourceType": "vscode",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/ConsoleStyle.swift",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiAuth.swift",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiError.swift",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiLabels.swift",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiSession.swift",
+      "readOnly": false
+    },
+    {
+      "path": "Sources/LoggingLoki/LokiStream.swift",
+      "readOnly": false
+    }
+  ]
+}

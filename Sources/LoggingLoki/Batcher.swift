@@ -1,7 +1,6 @@
 import Foundation
 
 final actor Batcher {
-    
     private let session: LokiSession
     private let headers: [String: String]
     private let auth: LokiAuth
@@ -12,10 +11,10 @@ final actor Batcher {
     private let batchSize: Int
     private let maxBatchTimeInterval: TimeInterval
 
-    private var currentTimer: Timer? = nil
+    private var currentTimer: Timer?
     private var timer: Task<Void, Error>?
 
-    var batch: Batch? = nil
+    var batch: Batch?
 
     init(session: LokiSession,
          auth: LokiAuth,
@@ -23,8 +22,8 @@ final actor Batcher {
          lokiURL: URL,
          sendDataAsJSON: Bool,
          batchSize: Int,
-         maxBatchTimeInterval: TimeInterval
-    ) {
+         maxBatchTimeInterval: TimeInterval)
+    {
         self.session = session
         self.auth = auth
         self.headers = headers
@@ -58,7 +57,7 @@ final actor Batcher {
         timer = nil
         self.batch = nil
         session.send(batch, url: lokiURL, headers: headers, auth: auth, sendAsJSON: sendDataAsJSON) { result in
-            if case .failure(let failure) = result {
+            if case let .failure(failure) = result {
                 debugPrint(failure)
             }
         }
