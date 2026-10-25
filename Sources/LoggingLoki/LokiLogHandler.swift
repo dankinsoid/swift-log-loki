@@ -18,7 +18,7 @@ public struct LokiLogHandler: LogHandler {
     private let maxBatchTimeInterval: TimeInterval?
     private let includeLabels: LabelsSet
     
-    private let batcher: Batcher
+    let batcher: Batcher
     
     /// The service label for the log handler instance.
     ///
@@ -35,7 +35,7 @@ public struct LokiLogHandler: LogHandler {
         headers: [String: String] = [:],
         sendAsJSON: Bool = false,
         batchSize: Int = 10,
-        maxBatchTimeInterval: TimeInterval = 5 * 60,
+        maxBatchTimeInterval: TimeInterval? = 5 * 60,
         session: LokiSession,
         includeLabels: LabelsSet = Self.defaultIndexedLabels,
         metadataProvider: Logger.MetadataProvider? = nil
@@ -107,6 +107,8 @@ public struct LokiLogHandler: LogHandler {
     ///   - maxBatchTimeInterval: The maximum amount of time in seconds to elapse until a batch is sent to Loki.
     ///                           This limit is set to 5 minutes by default. If a batch is not "full" after the end of the interval, it will be sent to Loki.
     ///                           The option should prevent leaving logs in memory for too long without sending them.
+    ///                           `nil` disables time-based sending: a batch goes out only once it is full or on ``flush()``.
+    ///                           Handlers sharing a `label` share one batcher, configured by the first of them.
     public init(
         label: String,
         logLevel: Logger.Level = .info,
@@ -127,12 +129,27 @@ public struct LokiLogHandler: LogHandler {
             headers: headers,
             sendAsJSON: sendAsJSON,
             batchSize: batchSize,
+            maxBatchTimeInterval: maxBatchTimeInterval,
             session: URLSession(configuration: .ephemeral),
             includeLabels: indexedMetadataKeys,
             metadataProvider: metadataProvider
         )
     }
     
+    /// Sends every pending batch of every handler now and waits until the requests complete.
+    ///
+    /// Call it when the process is about to be suspended or terminated (e.g. an iOS app entering the background),
+    /// where a time-based send would never fire. Entries logged a moment earlier may still be on their way
+    /// into the batch and miss this flush.
+    public static func flush() async {
+        let batchers = cache.withLockedValue { Array($0.values) }
+        await withTaskGroup(of: Void.self) { group in
+            for batcher in batchers {
+                group.addTask { await batcher.flush() }
+            }
+        }
+    }
+
     /// This method is called when a `LogHandler` must emit a log message. There is no need for the `LogHandler` to
     /// check if the `level` is above or below the configured `logLevel` as `Logger` already performed this check and
     /// determined that a message should be logged.
